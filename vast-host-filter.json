@@ -1,0 +1,19 @@
+{
+  "rentable": {"eq": true},
+  "rented": {"eq": false},
+  "external": {"eq": false},
+  "verified": {"eq": true},
+  "num_gpus": {"eq": 1},
+  "gpu_name": {"eq": "RTX 4090"},
+  "reliability2": {"gte": 0.98},
+  "inet_down": {"gte": 500},
+  "inet_up": {"gte": 100},
+  "disk_space": {"gte": 60},
+  "cuda_max_good": {"gte": 12.1},
+  "inet_down_cost": {"lte": 0.01},
+  "inet_up_cost": {"lte": 0.01},
+  "allocated_storage": 60,
+  "order": [["dph_total", "asc"]],
+  "type": "on-demand",
+  "limit": 64
+}
