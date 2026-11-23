@@ -132,7 +132,7 @@ fresh GPU.
 - **Pilot access (14 days free):** send your Axolotl / Unsloth / PyTorch training command to
   [ops@nomadgpu.com](mailto:ops@nomadgpu.com?subject=NomadGPU%20pilot%20config) — we'll wrap it into a resilient
   job spec the same business day. Prefer self-serve? [Sign up directly](https://app.nomadgpu.com/portal/signup?plan=self_serve) —
-  approval is automatic.
+  every application is reviewed by hand, usually the same business day.
 
 Issues and PRs welcome — especially host-selection heuristics: what signals do you use to spot a bad 4090 before
 renting?
