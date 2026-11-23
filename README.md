@@ -2,16 +2,13 @@
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-green) ![Zero telemetry](https://img.shields.io/badge/telemetry-zero-blue)
 
-Host filter for Vast.ai (cuts hidden bandwidth fees and slow PCIe hosts) + a background checkpoint watcher
-that syncs to R2/S3 outside the PyTorch loop.
+Host filter for Vast.ai + background checkpoint watcher for R2/S3. MIT licensed, no dependencies beyond
+`curl`/`jq` and `aws-cli`.
 
-Two small tools we use to run fine-tuning on spot GPU marketplaces (Vast.ai) without losing money or progress:
-
-1. **`vast-host-filter.json`** — the host-filtering query we use for 7B–70B training runs, with the reasoning for
-   every field. Filters out the hosts that look cheap but 4× your bill.
-2. **`ckpt-watcher.sh`** — a checkpoint uploader that never ships a half-written checkpoint to S3/R2.
-
-MIT licensed. No dependencies beyond `curl`/`jq` and `aws-cli`.
+1. **`vast-host-filter.json`** — host-filtering query for 7B–70B runs, with the reasoning for every field.
+   Cuts out hosts that look cheap per hour but 4× your bill on traffic or slow PCIe.
+2. **`ckpt-watcher.sh`** — background uploader that only syncs checkpoints marked complete, so a mid-save
+   crash never corrupts remote storage.
 
 ---
 
@@ -77,7 +74,7 @@ raise `gpu_ram` accordingly. The rest of the filter stays the same.
 written**. Uploading from inside the training loop is how checkpoints get corrupted: a segfault or hang
 mid-upload leaves a truncated file in storage, and you resume from garbage.
 
-**Contract** (works with HF Trainer, Axolotl, Unsloth, LLaMA-Factory out of the box):
+**Contract** (fits any `checkpoint-<step>/` layout — HF Trainer, Axolotl, Unsloth, LLaMA-Factory):
 
 ```
 ckpt/
@@ -86,11 +83,15 @@ ckpt/
   checkpoint-150/         complete, contains .done  -> uploaded
 ```
 
-One line in your training script after each save:
+Touch `.done` right after each checkpoint finishes writing. For HF Trainer / Unsloth, drop in a 5-line callback:
 
 ```python
 from pathlib import Path
-Path(f"{ckpt_dir}/checkpoint-{step}/.done").touch()
+from transformers import TrainerCallback
+
+class MarkCheckpointDone(TrainerCallback):
+    def on_save(self, args, state, control, **kwargs):
+        (Path(args.output_dir) / f"checkpoint-{state.global_step}" / ".done").touch()
 ```
 
 Run it next to your training (same container/host):
@@ -131,7 +132,7 @@ fresh GPU.
 - **Live recovery telemetry:** [status.nomadgpu.com/s/status](https://status.nomadgpu.com/s/status)
 - **Pilot access (14 days free):** send your Axolotl / Unsloth / PyTorch training command to
   [ops@nomadgpu.com](mailto:ops@nomadgpu.com?subject=NomadGPU%20pilot%20config) — we'll wrap it into a resilient
-  job spec the same business day. Prefer self-serve? [Sign up directly](https://app.nomadgpu.com/portal/signup?plan=self_serve) —
+  job spec the same business day. Prefer to start yourself? [Sign up here](https://app.nomadgpu.com/portal/signup) —
   every application is reviewed by hand, usually the same business day.
 
 Issues and PRs welcome — especially host-selection heuristics: what signals do you use to spot a bad 4090 before
