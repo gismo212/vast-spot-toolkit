@@ -57,12 +57,15 @@ What each field does and why:
 **Sort by all-in price, not `dph_total`.** The GPU hour is not the real cost. We rank by:
 
 ```
-all_in = dph_total
-       + expected_download_gb × inet_down_cost / expected_hours   # one-time pull, per hour of the run
+all_in = dph_total                                                # Vast's hourly GPU + storage rate
+       + expected_download_gb × inet_down_cost / expected_hours   # one-time pull, amortized per hour
        + expected_upload_gb_per_h × inet_up_cost                  # checkpoint traffic
 ```
 
 For a 4-hour 7B run: `expected_download_gb ≈ 20` (image + model + dataset), `expected_upload_gb_per_h ≈ 2`.
+
+> *Example (4 h 7B run, 20 GB down, 2 GB/h up): a $0.30/h host at $0.035/GB traffic actually costs **$0.55/h**;
+> a $0.35/h host at $0.002/GB costs **$0.36/h**.*
 
 **Adapting for model size:** for 7B QLoRA a single RTX 4090 (24 GB) works; for 13B use `"gpu_name": {"in":
 ["RTX 4090", "RTX A6000"]}`; for 70B QLoRA switch to 80 GB cards (`"gpu_name": {"eq": "A100 SXM4"}` or H100) and
@@ -107,33 +110,30 @@ Tunables: `CKPT_DIR` (default `/workspace/ckpt`), `READY_MARKER` (default `.done
 (default `120`). Use a credentials pair scoped to just your bucket/prefix — this file ends up on a stranger's
 machine, that's the whole point of spot.
 
-## Scope & Limitations (DIY vs. Automated Failover)
+## What a container-side script cannot do
 
-This toolkit runs locally / inside the GPU container. It solves bad host selection and off-machine backups,
-but **a script inside a dead container cannot replace its own machine**.
+This toolkit runs locally and inside the GPU container. It solves bad host selection and off-machine checkpoint
+backups, but **a script inside a dead container cannot replace its own machine**.
 
-| Failure mode | `vast-spot-toolkit` (DIY) | External Supervisor ([NomadGPU](https://nomadgpu.com)) |
+| Failure mode | This toolkit (in-container) | External control plane (DIY or managed) |
 |---|---|---|
-| High bandwidth fees / slow PCIe hosts | Filtered before renting | Filtered before renting |
-| Checkpoint lost when host dies | Synced to R2/S3 via watcher | Synced via scoped per-job temporary R2 keys |
-| Host reboots or disappears mid-run | Manual: rent new GPU & resume | Auto-rents replacement & resumes (median ~1 min; live recovery rate on [status.nomadgpu.com](https://status.nomadgpu.com/s/status)) |
-| Silent GPU hang (0% util, still billing) | Keeps billing until you notice | Auto-kills after 5 min GPU hang / 30 min stall |
+| High bandwidth fees / slow PCIe | Filtered before renting | Filtered before renting |
+| Checkpoint lost on host death | Synced to R2/S3 via watcher | Synced via per-job scoped temporary keys |
+| Host reboots or disappears | Manual: rent new GPU & resume | Auto-rents replacement & resumes |
+| Silent GPU hang (0% util, still billing) | Keeps billing until you notice | Detects lost/idle GPU and migrates or stops |
 | Runaway bill overnight | Manual monitoring | Hard dollar caps per job / day / week / month |
 
-### Need hands-off failover?
+## Origin
 
-This toolkit was extracted from **[NomadGPU](https://nomadgpu.com)** — a managed supervisor that runs on top of
-your own Vast.ai account (restricted 5-permission API key; you pay Vast directly).
+Extracted from [NomadGPU](https://nomadgpu.com) — a small managed watchdog I run on top of a user's own Vast.ai
+account (restricted 5-permission API key, zero markup on compute; live recovery telemetry at
+[status.nomadgpu.com/s/status](https://status.nomadgpu.com/s/status)).
 
-If you want to verify failover before trusting a long run, `nomadgpu dry-run` (~$0.10–$0.50 in Vast compute)
-spins up a host, saves a checkpoint to R2, destroys the instance on purpose, and verifies `resumed=true` on a
-fresh GPU.
-
-- **Live recovery telemetry:** [status.nomadgpu.com/s/status](https://status.nomadgpu.com/s/status)
-- **Pilot access (14 days free):** send your Axolotl / Unsloth / PyTorch training command to
-  [ops@nomadgpu.com](mailto:ops@nomadgpu.com?subject=NomadGPU%20pilot%20config) — we'll wrap it into a resilient
-  job spec the same business day. Prefer to start yourself? [Sign up here](https://app.nomadgpu.com/portal/signup) —
-  every application is reviewed by hand, usually the same business day.
+If you don't want to maintain your own external supervisor, `nomadgpu dry-run` (~$0.10–$0.50 in Vast compute)
+tests a live failover on your setup, and the first 14 days are free — either
+[sign up](https://app.nomadgpu.com/portal/signup) or email your training command to
+[ops@nomadgpu.com](mailto:ops@nomadgpu.com?subject=NomadGPU%20pilot%20config) and I'll wrap it the same
+business day.
 
 Issues and PRs welcome — especially host-selection heuristics: what signals do you use to spot a bad 4090 before
 renting?
